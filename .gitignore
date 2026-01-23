@@ -1,0 +1,113 @@
+############################
+# Logs
+############################
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+debug.log*
+
+############################
+# Dependency directories
+############################
+node_modules/
+bower_components/
+
+############################
+# Build & Output directories
+############################
+dist/
+build/
+out/
+coverage/
+dist-ssr/
+.tmp/
+.temp/
+
+############################
+# Environment files
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# Local config / cache
+############################
+*.local
+.cache/
+.npm/
+.yarn/
+.pnpm-store/
+.eslintcache
+
+############################
+# Public / Static files
+############################
+public/
+static/
+assets/
+uploads/
+
+############################
+# Framework-specific
+############################
+.next/
+.nuxt/
+.svelte-kit/
+.angular/
+storybook-static/
+
+############################
+# Editor directories & files
+############################
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.code-workspace
+
+############################
+# OS generated files
+############################
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+
+############################
+# Backup & temp files
+############################
+*~
+*.bak
+*.tmp
+*.old
+*.orig
+
+############################
+# Testing
+############################
+coverage/
+.nyc_output/
+
+############################
+# Docker
+############################
+docker-compose.override.yml
+.env.docker
+
+############################
+# Misc
+############################
+*.pid
+*.seed
+*.tgz
