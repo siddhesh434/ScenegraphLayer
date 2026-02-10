@@ -1,397 +1,395 @@
+/* ═══════════════════════════════════════════════════
+   App.jsx — Map Canvas with Text Annotations & Drawing
+   ═══════════════════════════════════════════════════
+   Architecture:
+     - react-map-gl Map for base map + Source/Layer for drawings
+     - Markers for text annotations
+     - Transparent overlay div for drawing interaction
+     - State: annotations[], drawings (GeoJSON FC), drawStyle, mode
+
+   File map:
+     constants.js           → modes, colors, defaults
+     utils/geoHelpers.js    → geometry builders & preview
+     components/Toolbar.jsx → tool buttons
+     components/PropertiesPanel.jsx → context-aware styling
+     components/TextAnnotation.jsx  → editable text marker
+*/
+
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import Map, { Marker } from 'react-map-gl/maplibre';
+import Map, { Marker, Source, Layer } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './App.css';
 
-/* ─── Constants ───────────────────────────────────── */
-const COLORS = [
-    '#FFFFFF', '#FF6B6B', '#FFD93D', '#6BCB77',
-    '#4D96FF', '#9B59B6', '#FF8A5C', '#EA4C89',
-    '#00D2FF', '#3D3D3D',
-];
+import {
+    MODES, DRAWING_MODES, DRAG_DRAW_MODES,
+    DEFAULT_TEXT_STYLE,
+    DEFAULT_DRAW_STYLE, MODE_LABELS, genId,
+} from './constants';
+import { buildFeature, buildArrowhead, buildPreview } from './utils/geoHelpers';
+import Toolbar from './components/Toolbar';
+import PropertiesPanel from './components/PropertiesPanel';
+import TextAnnotation from './components/TextAnnotation';
 
-const DEFAULT_ANNOTATION = {
-    fontSize: 18,
-    color: '#FFFFFF',
-    fontWeight: 'normal',
-    fontStyle: 'normal',
+/* ── Maplibre layer paint specs (data-driven from feature properties) ── */
+const FILL_PAINT = {
+    'fill-color': ['coalesce', ['get', 'fillColor'], '#4D96FF'],
+    'fill-opacity': ['coalesce', ['get', 'fillOpacity'], 0.15],
 };
+const LINE_PAINT = {
+    'line-color': ['coalesce', ['get', 'strokeColor'], '#4D96FF'],
+    'line-width': ['coalesce', ['get', 'strokeWidth'], 2],
+    'line-opacity': ['coalesce', ['get', 'opacity'], 1],
+};
+const LINE_LAYOUT = { 'line-cap': 'round', 'line-join': 'round' };
 
-let _idCounter = 0;
-const genId = () => `ann_${++_idCounter}`;
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
-/* ─── AnnotationNode Component ────────────────────── */
-function AnnotationNode({
-    annotation,
-    isSelected,
-    isEditing,
-    onSelect,
-    onStartEdit,
-    onFinishEdit,
-}) {
-    const inputRef = useRef(null);
-
-    useEffect(() => {
-        if (isEditing && inputRef.current) {
-            const el = inputRef.current;
-            el.focus();
-            if (el.value) {
-                el.select();
-            }
-            autoResize(el);
-        }
-    }, [isEditing]);
-
-    const baseStyle = {
-        fontSize: `${annotation.fontSize}px`,
-        color: annotation.color,
-        fontWeight: annotation.fontWeight,
-        fontStyle: annotation.fontStyle,
-    };
-
-    if (isEditing) {
-        return (
-            <textarea
-                ref={inputRef}
-                className="ann-textarea"
-                defaultValue={annotation.text}
-                style={baseStyle}
-                onBlur={(e) => onFinishEdit(e.target.value)}
-                onInput={(e) => autoResize(e.target)}
-                onKeyDown={(e) => {
-                    if (e.key === 'Escape') e.target.blur();
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        e.target.blur();
-                    }
-                    e.stopPropagation();
-                }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-            />
-        );
-    }
-
-    return (
-        <div
-            className={`ann-display ${isSelected ? 'ann-selected' : ''}`}
-            style={baseStyle}
-            onClick={(e) => {
-                e.stopPropagation();
-                onSelect();
-            }}
-            onDoubleClick={(e) => {
-                e.stopPropagation();
-                onStartEdit();
-            }}
-        >
-            {annotation.text || 'Double-click to edit'}
-        </div>
-    );
-}
-
-function autoResize(el) {
-    el.style.height = 'auto';
-    el.style.height = el.scrollHeight + 'px';
-}
-
-/* ─── Toolbar Icons (SVG) ─────────────────────────── */
-const SelectIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-        <path d="M13 13l6 6" />
-    </svg>
-);
-
-const TextIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 7V4h16v3" />
-        <path d="M12 4v16" />
-        <path d="M8 20h8" />
-    </svg>
-);
-
-const TrashIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="3 6 5 6 21 6" />
-        <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-    </svg>
-);
-
-/* ─── Main App ────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════
+   Main App Component
+   ═══════════════════════════════════════════════════ */
 function App() {
+    /* ── Map state ── */
     const [viewState, setViewState] = useState({
-        longitude: 72.8777,
-        latitude: 19.076,
-        zoom: 12,
+        longitude: 72.8777, latitude: 19.076, zoom: 12,
     });
+    const mapRef = useRef(null);
 
+    /* ── Mode ── */
+    const [mode, setMode] = useState(MODES.SELECT);
+
+    /* ── Text annotations ── */
     const [annotations, setAnnotations] = useState([]);
-    const [selectedId, setSelectedId] = useState(null);
-    const [editingId, setEditingId] = useState(null);
-    const [mode, setMode] = useState('select'); // 'select' | 'text'
+    const [selectedTextId, setSelectedTextId] = useState(null);
+    const [editingTextId, setEditingTextId] = useState(null);
 
-    const selectedAnn = useMemo(
-        () => annotations.find((a) => a.id === selectedId),
-        [annotations, selectedId],
+    /* ── Drawings (GeoJSON FeatureCollection) ── */
+    const [drawings, setDrawings] = useState(EMPTY_FC);
+    const [selectedDrawId, setSelectedDrawId] = useState(null);
+
+    /* ── Drawing style (applied to new drawings) ── */
+    const [drawStyle, setDrawStyle] = useState({ ...DEFAULT_DRAW_STYLE });
+
+    /* ── Drawing interaction state ── */
+    const [isDrawing, setIsDrawing] = useState(false);
+    const [drawPoints, setDrawPoints] = useState([]);
+    const [cursorPoint, setCursorPoint] = useState(null);
+
+    /* ── Derived ── */
+    const selectedTextAnn = useMemo(
+        () => annotations.find((a) => a.id === selectedTextId),
+        [annotations, selectedTextId],
+    );
+    const selectedDrawing = useMemo(
+        () => drawings.features.find((f) => f.properties.id === selectedDrawId),
+        [drawings, selectedDrawId],
+    );
+    const isInDrawMode = DRAWING_MODES.has(mode);
+
+    /* ── Rendered drawings GeoJSON (with arrowheads) ── */
+    const renderedDrawings = useMemo(() => {
+        const features = [];
+        drawings.features.forEach((f) => {
+            features.push(f);
+            if (f.properties.drawType === 'arrow') {
+                const head = buildArrowhead(f);
+                if (head) features.push(head);
+            }
+        });
+        return { type: 'FeatureCollection', features };
+    }, [drawings]);
+
+    /* ── Preview GeoJSON (current drawing in progress) ── */
+    const previewFC = useMemo(
+        () => buildPreview(mode, drawPoints, cursorPoint, drawStyle) || EMPTY_FC,
+        [mode, drawPoints, cursorPoint, drawStyle],
     );
 
-    /* ── Handlers ── */
-    const updateAnnotation = useCallback((id, updates) => {
-        setAnnotations((prev) =>
-            prev.map((a) => (a.id === id ? { ...a, ...updates } : a)),
-        );
+    /* ═══ Helpers ═══ */
+    const clearSelection = useCallback(() => {
+        setSelectedTextId(null);
+        setEditingTextId(null);
+        setSelectedDrawId(null);
     }, []);
 
-    const deleteAnnotation = useCallback(
-        (id) => {
-            setAnnotations((prev) => prev.filter((a) => a.id !== id));
-            if (selectedId === id) setSelectedId(null);
-            if (editingId === id) setEditingId(null);
-        },
-        [selectedId, editingId],
-    );
+    const updateAnnotation = useCallback((id, updates) => {
+        setAnnotations((prev) => prev.map((a) => (a.id === id ? { ...a, ...updates } : a)));
+    }, []);
 
-    const handleMapClick = useCallback(
-        (e) => {
-            if (mode === 'text') {
-                console.log("Hello");
-                const id = genId();
-                setAnnotations((prev) => [
-                    ...prev,
-                    {
-                        id,
-                        text: '',
-                        longitude: e.lngLat.lng,
-                        latitude: e.lngLat.lat,
-                        ...DEFAULT_ANNOTATION,
-                    },
-                ]);
-                console.log("Hello");
-                setSelectedId(id);
-                setEditingId(id);
-            } else {
-                setSelectedId(null);
-                setEditingId(null);
-            }
-        },
-        [mode],
-    );
+    const deleteAnnotation = useCallback((id) => {
+        setAnnotations((prev) => prev.filter((a) => a.id !== id));
+        setSelectedTextId((prev) => (prev === id ? null : prev));
+        setEditingTextId((prev) => (prev === id ? null : prev));
+    }, []);
 
-    const handleDragEnd = useCallback(
-        (id, e) => {
-            updateAnnotation(id, {
-                longitude: e.lngLat.lng,
-                latitude: e.lngLat.lat,
+    const updateDrawingFeature = useCallback((drawId, styleUpdates) => {
+        setDrawings((prev) => ({
+            ...prev,
+            features: prev.features.map((f) =>
+                f.properties.id === drawId
+                    ? { ...f, properties: { ...f.properties, ...styleUpdates } }
+                    : f,
+            ),
+        }));
+    }, []);
+
+    const deleteDrawing = useCallback((drawId) => {
+        setDrawings((prev) => ({
+            ...prev,
+            features: prev.features.filter(
+                (f) => f.properties.id !== drawId && f.properties.id !== drawId + '_head',
+            ),
+        }));
+        setSelectedDrawId((prev) => (prev === drawId ? null : prev));
+    }, []);
+
+    /* ═══ Screen → Geo coordinate conversion ═══ */
+    const screenToGeo = useCallback((e) => {
+        if (!mapRef.current) return null;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const point = [e.clientX - rect.left, e.clientY - rect.top];
+        const lngLat = mapRef.current.unproject(point);
+        return [lngLat.lng, lngLat.lat];
+    }, []);
+
+    /* ═══ Drawing event handlers (overlay div) ═══ */
+
+    /** Drag-based drawing: pointerdown → start */
+    const handleDrawPointerDown = useCallback((e) => {
+        if (!DRAG_DRAW_MODES.has(mode)) return;
+        const geo = screenToGeo(e);
+        if (!geo) return;
+        e.preventDefault();
+        setIsDrawing(true);
+        setDrawPoints([geo]);
+        setCursorPoint(geo);
+    }, [mode, screenToGeo]);
+
+    /** Drag-based drawing: pointermove → update */
+    const handleDrawPointerMove = useCallback((e) => {
+        const geo = screenToGeo(e);
+        if (!geo) return;
+        setCursorPoint(geo);
+        if (isDrawing && mode === MODES.FREEHAND) {
+            setDrawPoints((prev) => [...prev, geo]);
+        }
+    }, [isDrawing, mode, screenToGeo]);
+
+    /** Drag-based drawing: pointerup → finalize */
+    const handleDrawPointerUp = useCallback((e) => {
+        if (!isDrawing) return;
+        const geo = screenToGeo(e);
+        if (!geo || drawPoints.length === 0) {
+            setIsDrawing(false);
+            return;
+        }
+
+        const finalPoints = mode === MODES.FREEHAND ? [...drawPoints, geo] : [drawPoints[0], geo];
+        const id = genId('draw');
+        const feature = buildFeature(mode, finalPoints, drawStyle, id);
+
+        setDrawings((prev) => ({
+            ...prev,
+            features: [...prev.features, feature],
+        }));
+
+        setSelectedDrawId(id);
+        setSelectedTextId(null);
+        setEditingTextId(null);
+
+        setIsDrawing(false);
+        setDrawPoints([]);
+        setCursorPoint(null);
+    }, [isDrawing, drawPoints, mode, drawStyle, screenToGeo]);
+
+    /* ═══ Map click (text & select) ═══ */
+    const handleMapClick = useCallback((e) => {
+        if (isInDrawMode) return;
+
+        if (mode === MODES.TEXT) {
+            const id = genId('txt');
+            setAnnotations((prev) => [
+                ...prev,
+                { id, text: '', longitude: e.lngLat.lng, latitude: e.lngLat.lat, ...DEFAULT_TEXT_STYLE },
+            ]);
+            setSelectedTextId(id);
+            setEditingTextId(id);
+            setSelectedDrawId(null);
+        } else if (mode === MODES.SELECT) {
+            // Check if clicked on a drawing feature
+            const features = mapRef.current?.queryRenderedFeatures(e.point, {
+                layers: ['drawings-fill', 'drawings-line'],
             });
-        },
-        [updateAnnotation],
-    );
+            if (features?.length > 0) {
+                const fid = features[0].properties.id;
+                // Skip arrowhead companion features
+                if (!fid.endsWith('_head')) {
+                    setSelectedDrawId(fid);
+                    setSelectedTextId(null);
+                    setEditingTextId(null);
+                    return;
+                }
+            }
+            clearSelection();
+        }
+    }, [mode, isInDrawMode, clearSelection]);
 
-    /* ── Keyboard shortcuts ── */
+    const handleDragEnd = useCallback((id, e) => {
+        updateAnnotation(id, { longitude: e.lngLat.lng, latitude: e.lngLat.lat });
+    }, [updateAnnotation]);
+
+    /* ═══ Keyboard shortcuts ═══ */
     useEffect(() => {
         const onKey = (e) => {
-            if (editingId) return;
+            if (editingTextId) return;
             const tag = e.target.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-            switch (e.key) {
-                case 'Delete':
-                case 'Backspace':
-                    if (selectedId) deleteAnnotation(selectedId);
-                    break;
-                case 'Escape':
-                    setSelectedId(null);
-                    setEditingId(null);
-                    setMode('select');
-                    break;
-                case 't':
-                case 'T':
-                    setMode('text');
-                    break;
-                case 'v':
-                case 'V':
-                    setMode('select');
-                    break;
-                default:
-                    break;
+            const keyMap = {
+                v: MODES.SELECT, t: MODES.TEXT, p: MODES.FREEHAND,
+                l: MODES.LINE, r: MODES.RECTANGLE, c: MODES.CIRCLE,
+                a: MODES.ARROW,
+            };
+            const mapped = keyMap[e.key.toLowerCase()];
+            if (mapped) { setMode(mapped); return; }
+
+            if ((e.key === 'Delete' || e.key === 'Backspace')) {
+                if (selectedTextId) deleteAnnotation(selectedTextId);
+                else if (selectedDrawId) deleteDrawing(selectedDrawId);
+            }
+            if (e.key === 'Escape') {
+                if (isDrawing) {
+                    setIsDrawing(false);
+                    setDrawPoints([]);
+                    setCursorPoint(null);
+                } else {
+                    clearSelection();
+                    setMode(MODES.SELECT);
+                }
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [selectedId, editingId, deleteAnnotation]);
+    }, [selectedTextId, selectedDrawId, editingTextId, isDrawing, deleteAnnotation, deleteDrawing, clearSelection]);
 
-    /* ── Render ── */
+    /* ═══ Properties panel handlers ═══ */
+    const propsType = selectedTextAnn ? 'text' : selectedDrawing ? 'drawing' : null;
+
+    const handlePropsUpdate = useCallback((updates) => {
+        if (selectedTextId) updateAnnotation(selectedTextId, updates);
+        else if (selectedDrawId) {
+            updateDrawingFeature(selectedDrawId, updates);
+            setDrawStyle((prev) => ({ ...prev, ...updates })); // also update active style
+        }
+    }, [selectedTextId, selectedDrawId, updateAnnotation, updateDrawingFeature]);
+
+    const handlePropsDelete = useCallback(() => {
+        if (selectedTextId) deleteAnnotation(selectedTextId);
+        else if (selectedDrawId) deleteDrawing(selectedDrawId);
+    }, [selectedTextId, selectedDrawId, deleteAnnotation, deleteDrawing]);
+
+    /* ═══ Cursor style ═══ */
+    const cursor = isInDrawMode ? 'crosshair' : mode === MODES.TEXT ? 'crosshair' : 'default';
+
+    /* ═══ Render ═══ */
     return (
         <div className="app-container">
-            {/* ── Left Toolbar ── */}
-            <div className="toolbar">
-                <div className="toolbar-brand">✏️</div>
+            <Toolbar mode={mode} setMode={setMode} />
 
-                <div className="toolbar-group">
-                    <button
-                        className={`tool-btn ${mode === 'select' ? 'active' : ''}`}
-                        onClick={() => setMode('select')}
-                        title="Select (V)"
-                    >
-                        <SelectIcon />
-                    </button>
-                    <button
-                        className={`tool-btn ${mode === 'text' ? 'active' : ''}`}
-                        onClick={() => setMode('text')}
-                        title="Add Text (T)"
-                    >
-                        <TextIcon />
-                    </button>
-                </div>
-            </div>
-
-            {/* ── Properties Panel (top bar) ── */}
-            {selectedAnn && !editingId && (
-                <div className="props-panel">
-                    {/* Font Size */}
-                    <div className="prop-group">
-                        <span className="prop-label">Size</span>
-                        <div className="size-controls">
-                            <button
-                                className="size-btn"
-                                onClick={() =>
-                                    updateAnnotation(selectedId, {
-                                        fontSize: Math.max(10, selectedAnn.fontSize - 2),
-                                    })
-                                }
-                            >
-                                −
-                            </button>
-                            <span className="size-value">{selectedAnn.fontSize}</span>
-                            <button
-                                className="size-btn"
-                                onClick={() =>
-                                    updateAnnotation(selectedId, {
-                                        fontSize: Math.min(80, selectedAnn.fontSize + 2),
-                                    })
-                                }
-                            >
-                                +
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="prop-divider" />
-
-                    {/* Colors */}
-                    <div className="prop-group">
-                        <span className="prop-label">Color</span>
-                        <div className="color-swatches">
-                            {COLORS.map((c) => (
-                                <button
-                                    key={c}
-                                    className={`swatch ${selectedAnn.color === c ? 'swatch-active' : ''}`}
-                                    style={{ background: c }}
-                                    onClick={() => updateAnnotation(selectedId, { color: c })}
-                                />
-                            ))}
-                        </div>
-                    </div>
-
-                    <div className="prop-divider" />
-
-                    {/* Bold / Italic */}
-                    <div className="prop-group">
-                        <button
-                            className={`style-toggle ${selectedAnn.fontWeight === 'bold' ? 'active' : ''}`}
-                            onClick={() =>
-                                updateAnnotation(selectedId, {
-                                    fontWeight:
-                                        selectedAnn.fontWeight === 'bold' ? 'normal' : 'bold',
-                                })
-                            }
-                        >
-                            B
-                        </button>
-                        <button
-                            className={`style-toggle italic ${selectedAnn.fontStyle === 'italic' ? 'active' : ''}`}
-                            onClick={() =>
-                                updateAnnotation(selectedId, {
-                                    fontStyle:
-                                        selectedAnn.fontStyle === 'italic' ? 'normal' : 'italic',
-                                })
-                            }
-                        >
-                            I
-                        </button>
-                    </div>
-
-                    <div className="prop-divider" />
-
-                    {/* Delete */}
-                    <button
-                        className="delete-btn"
-                        onClick={() => deleteAnnotation(selectedId)}
-                        title="Delete (Del)"
-                    >
-                        <TrashIcon />
-                    </button>
-                </div>
+            {mode === MODES.SELECT && propsType && !editingTextId && (
+                <PropertiesPanel
+                    type={propsType}
+                    annotation={selectedTextAnn}
+                    drawingStyle={selectedDrawing ? selectedDrawing.properties : drawStyle}
+                    onUpdate={handlePropsUpdate}
+                    onDelete={handlePropsDelete}
+                />
             )}
 
-            {/* ── Mode Indicator ── */}
-            {mode === 'text' && (
+            {MODE_LABELS[mode] && (
                 <div className="mode-badge">
                     <span className="mode-dot" />
-                    Click on map to place text
+                    {MODE_LABELS[mode]}
                 </div>
             )}
 
-            {/* ── Map ── */}
+            {/* Drawing overlay — captures pointer events when in drawing mode */}
+            {isInDrawMode && (
+                <div
+                    className="drawing-overlay"
+                    onPointerDown={handleDrawPointerDown}
+                    onPointerMove={handleDrawPointerMove}
+                    onPointerUp={handleDrawPointerUp}
+                />
+            )}
+
             <Map
+                ref={mapRef}
                 {...viewState}
                 onMove={(e) => setViewState(e.viewState)}
                 onClick={handleMapClick}
                 style={{ width: '100%', height: '100%' }}
                 mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-                cursor={mode === 'text' ? 'crosshair' : 'default'}
-                dragPan={mode !== 'text'}
-                dragRotate={mode !== 'text'}
-                scrollZoom={mode !== 'text'}
-                doubleClickZoom={mode !== 'text'}
-                touchZoom={mode !== 'text'}
-                touchRotate={mode !== 'text'}
-                keyboard={mode !== 'text'}
+                cursor={cursor}
             >
+                {/* Completed drawings */}
+                <Source id="drawings-src" type="geojson" data={renderedDrawings}>
+                    <Layer id="drawings-fill" type="fill" paint={FILL_PAINT}
+                        filter={['==', ['geometry-type'], 'Polygon']} />
+                    <Layer id="drawings-line" type="line" paint={LINE_PAINT} layout={LINE_LAYOUT} />
+                </Source>
+
+                {/* Drawing preview (in-progress) */}
+                <Source id="preview-src" type="geojson" data={previewFC}>
+                    <Layer id="preview-fill" type="fill" paint={{ ...FILL_PAINT, 'fill-opacity': 0.1 }}
+                        filter={['==', ['geometry-type'], 'Polygon']} />
+                    <Layer id="preview-line" type="line"
+                        paint={{ ...LINE_PAINT, 'line-dasharray': [4, 4] }}
+                        layout={LINE_LAYOUT} />
+                </Source>
+
+                {/* Selection highlight */}
+                {selectedDrawing && (
+                    <Source id="selection-src" type="geojson" data={{
+                        type: 'FeatureCollection',
+                        features: [selectedDrawing],
+                    }}>
+                        <Layer id="selection-line" type="line" paint={{
+                            'line-color': '#6baaff',
+                            'line-width': ['coalesce', ['get', 'strokeWidth'], 2],
+                            'line-dasharray': [4, 3],
+                            'line-opacity': 0.8,
+                        }} layout={LINE_LAYOUT} />
+                    </Source>
+                )}
+
+                {/* Text annotations */}
                 {annotations.map((ann) => (
                     <Marker
                         key={ann.id}
                         longitude={ann.longitude}
                         latitude={ann.latitude}
-                        draggable={
-                            mode === 'select' &&
-                            selectedId === ann.id &&
-                            editingId !== ann.id
-                        }
+                        draggable={mode === MODES.SELECT && selectedTextId === ann.id && editingTextId !== ann.id}
                         onDragEnd={(e) => handleDragEnd(ann.id, e)}
                         anchor="center"
                     >
-                        <AnnotationNode
+                        <TextAnnotation
                             annotation={ann}
-                            isSelected={selectedId === ann.id}
-                            isEditing={editingId === ann.id}
+                            isSelected={selectedTextId === ann.id}
+                            isEditing={editingTextId === ann.id}
                             onSelect={() => {
-                                if (mode === 'select') {
-                                    setSelectedId(ann.id);
+                                if (mode === MODES.SELECT) {
+                                    setSelectedTextId(ann.id);
+                                    setSelectedDrawId(null);
                                 }
                             }}
                             onStartEdit={() => {
-                                setSelectedId(ann.id);
-                                setEditingId(ann.id);
+                                setSelectedTextId(ann.id);
+                                setEditingTextId(ann.id);
                             }}
                             onFinishEdit={(text) => {
-                                if (!text.trim()) {
-                                    deleteAnnotation(ann.id);
-                                } else {
-                                    updateAnnotation(ann.id, { text });
-                                }
-                                setEditingId(null);
+                                if (!text.trim()) deleteAnnotation(ann.id);
+                                else updateAnnotation(ann.id, { text });
+                                setEditingTextId(null);
                             }}
                         />
                     </Marker>
