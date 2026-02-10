@@ -1,42 +1,395 @@
-#root {
-  width: 100%;
+/* ═══════════════════════════════════════════════════
+   Text Annotation Canvas — App Styles
+   ═══════════════════════════════════════════════════ */
+
+/* ─── Layout ──────────────────────────────────────── */
+.app-container {
+  width: 100vw;
   height: 100vh;
-  margin: 0;
+  position: relative;
+  overflow: hidden;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* ─── Left Toolbar ────────────────────────────────── */
+.toolbar {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 10px;
+  background: rgba(15, 15, 25, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  animation: slideInLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toolbar-brand {
+  text-align: center;
+  font-size: 22px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+
+.toolbar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.tool-btn {
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
   padding: 0;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.tool-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.9);
 }
 
-@keyframes logo-spin {
+.tool-btn.active {
+  background: rgba(77, 150, 255, 0.15);
+  color: #6baaff;
+  box-shadow: inset 0 0 0 1.5px rgba(77, 150, 255, 0.25);
+}
+
+/* ─── Properties Panel ────────────────────────────── */
+.props-panel {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 22px;
+  background: rgba(15, 15, 25, 0.92);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 0, 0, 0.2);
+  animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.prop-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prop-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.35);
+  user-select: none;
+}
+
+.prop-divider {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+/* Size Controls */
+.size-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 2px;
+}
+
+.size-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  transition: all 0.15s ease;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.size-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.size-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  min-width: 28px;
+  text-align: center;
+  user-select: none;
+}
+
+/* Color Swatches */
+.color-swatches {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+}
+
+.swatch:hover {
+  transform: scale(1.2);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.swatch-active {
+  border-color: rgba(255, 255, 255, 0.8);
+  transform: scale(1.15);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.15),
+    0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+/* Style Toggles (Bold / Italic) */
+.style-toggle {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  padding: 0;
+  transition: all 0.15s ease;
+  font-family: 'Georgia', serif;
+}
+
+.style-toggle.italic {
+  font-style: italic;
+}
+
+.style-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.style-toggle.active {
+  background: rgba(77, 150, 255, 0.15);
+  color: #6baaff;
+  box-shadow: inset 0 0 0 1.5px rgba(77, 150, 255, 0.25);
+}
+
+/* Delete Button */
+.delete-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: rgba(255, 75, 75, 0.08);
+  color: rgba(255, 100, 100, 0.7);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+
+.delete-btn:hover {
+  background: rgba(255, 75, 75, 0.2);
+  color: #ff6b6b;
+}
+
+/* ─── Mode Badge ──────────────────────────────────── */
+.mode-badge {
+  position: absolute;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: rgba(15, 15, 25, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 12px;
+  border: 1px solid rgba(77, 150, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.mode-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4d96ff;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+/* ─── Annotation Styles ───────────────────────────── */
+.ann-display {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-width: 360px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
+  text-shadow:
+    0 1px 6px rgba(0, 0, 0, 0.85),
+    0 0 2px rgba(0, 0, 0, 0.5);
+  transition:
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  line-height: 1.4;
+  animation: popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ann-display:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ann-selected {
+  box-shadow: 0 0 0 2px rgba(77, 150, 255, 0.5);
+  background: rgba(77, 150, 255, 0.08);
+  cursor: grab;
+}
+
+.ann-selected:active {
+  cursor: grabbing;
+}
+
+.ann-textarea {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1.5px solid rgba(77, 150, 255, 0.5);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: inherit;
+  font-family: inherit;
+  line-height: 1.4;
+  resize: none;
+  outline: none;
+  min-width: 140px;
+  max-width: 400px;
+  overflow: hidden;
+  text-shadow:
+    0 1px 6px rgba(0, 0, 0, 0.85),
+    0 0 2px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 0 0 3px rgba(77, 150, 255, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: popIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ─── Animations ──────────────────────────────────── */
+@keyframes slideInLeft {
   from {
-    transform: rotate(0deg);
+    opacity: 0;
+    transform: translateX(-16px);
   }
   to {
-    transform: rotate(360deg);
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 }
 
-.card {
-  padding: 2em;
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
-.read-the-docs {
-  color: #888;
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ─── Override maplibre default marker styles ─────── */
+.maplibregl-marker {
+  will-change: transform;
 }
